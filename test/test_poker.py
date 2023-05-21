@@ -1,5 +1,6 @@
 from poker import PokerCard, PokerHand
 from card import Deck, Suit
+from pytest import raises
 
 
 class TestDeck:
@@ -83,3 +84,72 @@ class TestPokerScenario:
         self.hand1.append(PokerCard(Suit.SPADE, 13))
         self.hand1.append(PokerCard(Suit.SPADE, 12))
         assert self.hand1.evaluate() == "Flush"
+
+
+class NewPokerHand(PokerHand):
+    # PokerHandのサブクラス
+    ...
+
+
+class OtherClass:
+    # PokerHandと継承関係にないクラス
+    ...
+
+
+class TestPokerHandComparator:
+    """PokerHandクラスの比較メソッドのテスト
+    同じ型同士、サブクラス間では比較可能
+    """
+    dk: Deck()
+
+    def setup_method(self):
+        # デッキを作ってシャッフルする
+        self.dk = Deck(card_cls=PokerCard, joker=False)
+        self.dk.shuffle()
+
+    def test_comparator_1(self):
+        """PokerHandクラス同士は比較可能
+        """
+        # プレイヤー(手札の受け皿)を作る
+        player1 = PokerHand(str(1))
+        player2 = PokerHand(str(2))
+
+        try:
+            player1 == player2
+        except Exception:
+            assert False
+
+    def test_comparator_2(self):
+        """サブクラスは比較不可
+        """
+        # プレイヤー(手札の受け皿)を作る
+        player1 = PokerHand(str(1))
+        player2 = NewPokerHand(str(2))
+
+        with raises(NotImplementedError):
+            player1 == player2
+
+    def test_comparator_3(self):
+        """継承関係にないクラスは比較不可
+        """
+        # プレイヤー(手札の受け皿)を作る
+        player1 = PokerHand(str(1))
+
+        with raises(NotImplementedError):
+            player1 == 10
+
+        with raises(NotImplementedError):
+            player1 == 2.0
+
+        with raises(NotImplementedError):
+            player1 == "abc"
+
+    def test_comparator_4(self):
+        """継承関係にないクラスは比較不可
+        """
+        # プレイヤー(手札の受け皿)を作る
+        player1 = PokerHand(str(1))
+        player2 = OtherClass()
+
+        with raises(NotImplementedError):
+            player1 == player2

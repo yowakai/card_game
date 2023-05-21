@@ -2,6 +2,8 @@
 
     * class Suit: トランプのスートを表す列挙型
     * class Card: トランプのカード 1枚を表すクラス
+    * class CardImageBuilder: 1枚の大きな画像から
+    *       カード 1枚の画像を切り出す Builder
     * class Deck: トランプ一式(山札)を表すクラス
     * class Hand: トランプの手札を表すクラス
 
@@ -9,6 +11,8 @@
 from enum import IntEnum, auto
 from random import shuffle
 from typing import TypeVar, Callable, Iterable
+from PIL import Image, ImageTk
+from board import Holder
 
 
 class Suit(IntEnum):
@@ -28,6 +32,33 @@ class Suit(IntEnum):
         return ["", "♣", "♦", "♥", "♠", "Joker"][self.value]
 
 
+class CardImageBuilder:
+    IMAGE_WIDTH: int
+    IMAGE_HEIGHT: int
+    __IMAGE_PATH: str = 'assets/images/trump.png'
+    REVERSED: ImageTk
+
+    def __init__(self):
+        self.__IMAGE = Image.open(self.__IMAGE_PATH)
+        self.IMAGE_WIDTH = self.__IMAGE.size[0] // 13
+        self.IMAGE_HEIGHT = self.__IMAGE.size[1] // 4     # Number of suites
+        self.REVERSED = self.__IMAGE.crop((0, 0, 100, 200))
+
+    def GetPhotoImage(self, suit: Suit, number: int) -> Image:
+        left = (number - 1) * self.IMAGE_WIDTH
+        right = left + self.IMAGE_WIDTH - 1
+
+        # Suitの並びと画像の並びが違うので読み替える
+        x = [Suit.SPADE, Suit.HEART, Suit.CLUB, Suit.DIAMOND].index(suit)
+
+        top = self.IMAGE_HEIGHT * x
+        bottom = top + self.IMAGE_HEIGHT - 1
+
+        return ImageTk.PhotoImage(
+            self.__IMAGE.crop((left, top, right, bottom))
+        )
+
+
 class Card:
     """トランプのカード 1枚を表すクラス
 
@@ -38,16 +69,30 @@ class Card:
         strength: カードの強さ
 
     """
-    Self = TypeVar('Self', bound="Card")
+    Self = TypeVar('Self', bound='Card')
+
+    IMAGE_WIDTH: int
+    IMAGE_HEIGHT: int
+    REVERSED: ImageTk
+    __is_open: bool
 
     numbers = range(1, 13+1)
     # __NUM_DISP: カード番号の表示名のリスト
     __NUM_DISP = ["", "A", "J", "Q", "K"]
     __NUM_DISP[2:2] = [str(n) for n in range(2, 10+1)]
 
+    # カードのイメージ
+    cib = CardImageBuilder()
+    IMAGE_WIDTH = cib.IMAGE_WIDTH
+    IMAGE_HEIGHT = cib.IMAGE_HEIGHT
+    REVERSED = cib.REVERSED
+
     def __init__(self, suit: Suit, number: int) -> None:
         self.__suit = suit
         self.__number = int(number)
+
+        self.image = self.cib.GetPhotoImage(suit, number)
+        self.is_open = True
 
     def __str__(self) -> str:
         if self.__suit == Suit.JOKER:
@@ -55,6 +100,14 @@ class Card:
         # __NUM_DISPはクラス変数だが、self.__NUM_DISPとすることで
         # サブクラスでオーバーライドしてもオーバーライド先を参照してくれる
         return "-".join([str(self.__suit), self.__NUM_DISP[self.__number]])
+
+    @property
+    def is_open(self) -> bool:
+        return self.__is_open
+
+    @is_open.setter
+    def is_open(self, value: bool):
+        self.__is_open = value
 
     # デコレータ
     @staticmethod
@@ -71,31 +124,6 @@ class Card:
             v = func(self, other)
             return v
         return _typecheck
-
-    # 比較演算
-    @typecheck
-    def __eq__(self: Self, other: Self) -> bool:
-        return self.strength == other.strength
-
-    @typecheck
-    def __lt__(self: Self, other: Self) -> bool:
-        return self.strength < other.strength
-
-    @typecheck
-    def __le__(self: Self, other: Self) -> bool:
-        return self.strength <= other.strength
-
-    @typecheck
-    def __gt__(self: Self, other: Self) -> bool:
-        return self.strength > other.strength
-
-    @typecheck
-    def __ge__(self: Self, other: Self) -> bool:
-        return self.strength >= other.strength
-
-    @typecheck
-    def __ne__(self: Self, other: Self) -> bool:
-        return not self.__eq__(other)
 
     @property
     def strength(self) -> int:
@@ -191,26 +219,38 @@ class Hand:
         name: プレーヤーの名前
 
     """
+    THolder = TypeVar('THolder', bound='Holder')
+
     def __init__(self, name: str = "") -> None:
-        self.__cards: list[Card] = []
+        self._cards: list[Card] = []
         self.name: str = name
+        self._holder = None
 
     def __str__(self) -> str:
         # 手札を文字列化する
         # return " ".join([str(c) for c in self.__cards])
-        return " ".join(map(str, self.__cards))
+        return " ".join(map(str, self._cards))
+
+    def install_holder(self, holder: THolder):
+        self._holder = holder
 
     def append(self, card: Card) -> None:
         """カードを 1枚追加する
 
         """
-        self.__cards.append(card)
+        self._cards.append(card)
 
     @property
     def cards(self) -> list[Card]:
         """手札のリスト
         """
-        return self.__cards
+        return self._cards
+
+    @cards.setter
+    def cards(self, new_cards: list[Card]):
+        self._cards = new_cards
+        if self._holder is not None:
+            self._holder.cards = new_cards
 
     @property
     def nums(self) -> list[int]:
@@ -218,11 +258,14 @@ class Hand:
 
         手札の番号ではないことに注意。
         """
-        return [card.strength for card in self.__cards]
+        return [card.strength for card in self._cards]
 
     @property
     def suits(self) -> set[Suit]:
         """手札に含まれるスートの集合
         """
-        self.__suits = {card.suit for card in self.__cards}
+        self.__suits = {card.suit for card in self._cards}
         return self.__suits
+
+    def redraw(self):
+        self._holder.redraw()

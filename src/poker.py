@@ -1,8 +1,9 @@
 from enum import IntEnum, auto
 from collections import Counter
-# from functools import reduce
-from typing import TypeVar, Callable, NamedTuple, Any
+from typing import TypeVar, Callable, NamedTuple, Any, Generic
 from card import Card, Hand
+from board import Board, Size, Holder
+from tkinter import Canvas
 
 
 class PokerCard(Card):
@@ -76,23 +77,32 @@ class PokerHand(Hand):
     @staticmethod
     def comparator(func: Callable[[Self, Self], bool]) \
             -> Callable[[Self, Self], bool]:
-        # 比較演算用型チェックデコレータ
-        # selfと otherの型が異なる場合、TypeErrorを上げる
-        # なぜか型ヒントが書けないのでしかたなくデコレータで実装
+        """比較演算用型チェックデコレータ
+        2つのオブジェクトが比較可能なら比較メソッドの実行結果を返す
+        比較可能でない場合、NotImplementedErrorを上げる
+
+        Raises:
+            NotImplementedError: 比較可能でない
+
+        Returns:
+            bool: 比較結果
+        """
         def _comparator(self, other) -> bool:
-            if not isinstance(other, type(self)):
-                raise TypeError
+            # 比較相手が同じクラスでない場合は比較不能とし
+            # NotImplementedErrorを上げる
+            if type(self) is not type(other):
+                raise NotImplementedError
             v = func(self, other)
             return v
         return _comparator
 
     @comparator
     def __gt__(self: Self, other: Self) -> bool:
-        return self.__score > other.__score
+        return self._score > other._score
 
     @comparator
     def __eq__(self: Self, other: Self) -> bool:
-        return self.__score == other.__score
+        return self._score == other._score
 
     def sort(self) -> None:
         """カードを並べ替える
@@ -108,11 +118,10 @@ class PokerHand(Hand):
             ))
         # 上記のタプルを (枚数, 番号の逆順) の降順に並べ替える
         # これにより枚数が多いカードが先に、番号が小さいものが先に並ぶ
-        ordered_tuple.sort(key=lambda t: (t[0], 14 - t[1].number),
+        ordered_tuple.sort(key=lambda t: (t[0], -t[1].number),
                            reverse=True)
         # 親クラスのカードリストを置き換える
-        # 本来 privateなので直接操作できないが難読化した名前でアクセスしている
-        self._Hand__cards = [t[1] for t in ordered_tuple]
+        self.cards = [card for _, card in ordered_tuple]
 
     def __pre_evaluate(self) -> None:
         # 同じ番号の手札を数える
@@ -231,40 +240,27 @@ class PokerHand(Hand):
 
         return "Can't evaluate."
 
-        """旧実装
-        if self.is_royalstraightflush():
-            self.major = PokerHandEnum.ROYAL_STRAIGHT_FLUSH
-            return "Royal straight flush"
-        if self.is_straightflush():
-            self.major = PokerHandEnum.STRAIGHT_FLUSH
-            return "Straight flush"
-        if self.is_fourcards():
-            self.major = PokerHandEnum.FOUR_OF_A_KIND
-            return "Four of a kind"
-        if self.is_fullhouse():
-            self.major = PokerHandEnum.FULL_HOUSE
-            return "Full house"
-        if self.is_flush():
-            self.major = PokerHandEnum.FLUSH
-            return "flush"
-        if self.is_straight():
-            self.major = PokerHandEnum.STRAIGHT
-            return "Straight"
-        if self.is_threecards():
-            self.major = PokerHandEnum.THREE_OF_A_KIND
-            return "Three cards"
-        if self.is_twopairs():
-            self.major = PokerHandEnum.TWO_PAIR
-            return "Two pairs"
-        if self.is_onepair():
-            self.major = PokerHandEnum.ONE_PAIR
-            return "One pair"
-        self.major = PokerHandEnum.NO_PAIR
-        self.minor = self.__calc_minor()
-        return "No pair"
-        """
-
     @property
-    def __score(self) -> int:
-        self.evaluate()
+    def _score(self) -> int:
+        if len(self.cards) == 5:
+            self.evaluate()
+
         return self.major * 1_00_00_00_00_00 + self.minor
+
+
+T = TypeVar('T', bound='Size')
+
+
+class PokerBoard(Board, Generic[T]):
+    """ポーカー専用の盤面
+    Boardクラスを継承
+    2人用の手札表示領域を作成
+    """
+    def __init__(self, canvas: Canvas, *, cls: T = PokerCard) -> None:
+        super().__init__(canvas, cls=PokerCard)
+        self.__holders = [
+            # Player 1 の表示領域
+            self.create_holder(40, 40, 540, 240, Holder.holizontal),
+            # Player 2 の表示領域
+            self.create_holder(340, 40, 540, 240, Holder.holizontal)
+        ]
